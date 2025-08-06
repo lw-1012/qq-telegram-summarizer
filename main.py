@@ -59,16 +59,36 @@ class QQTelegramSummarizerPlugin(Star):
             logger.error(f"配置处理出错: {e}")
             self.config = {}
 
+    def get_config_value(self, key: str, default=None):
+        """安全获取配置值"""
+        try:
+            if hasattr(self.config, 'get'):
+                return self.config.get(key, default)
+            elif hasattr(self.config, key):
+                return getattr(self.config, key, default)
+            elif isinstance(self.config, dict):
+                return self.config.get(key, default)
+            else:
+                return default
+        except:
+            return default
+
     async def initialize(self):
         """插件初始化"""
         logger.info("QQ群消息监听与AI总结Telegram推送插件初始化完成")
-        if not all([self.config.get('telegram_bot_token'), self.config.get('telegram_chat_id')]):
+        
+        telegram_token = self.get_config_value('telegram_bot_token', '')
+        telegram_chat_id = self.get_config_value('telegram_chat_id', '')
+        
+        if not all([telegram_token, telegram_chat_id]):
             logger.warning("请在WebUI插件管理中配置Telegram相关参数")
         
-        ai_config = self.config.get('ai_config', {})
-        if not ai_config.get('use_internal_llm', True):
-            if not ai_config.get('api_key'):
-                logger.warning("请配置AI API密钥或启用内部LLM")
+        ai_config = self.get_config_value('ai_config', {})
+        if isinstance(ai_config, dict):
+            use_internal_llm = ai_config.get('use_internal_llm', True)
+            if not use_internal_llm:
+                if not ai_config.get('api_key'):
+                    logger.warning("请配置AI API密钥或启用内部LLM")
     
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def on_group_message(self, event: AstrMessageEvent):
@@ -80,7 +100,7 @@ class QQTelegramSummarizerPlugin(Star):
                 return  # 如果不是群消息，直接返回
             
             # 如果配置了特定群组，只监听这些群组
-            target_groups = self.config.get('target_groups', [])
+            target_groups = self.get_config_value('target_groups', [])
             if target_groups and group_id not in target_groups:
                 return
             
@@ -111,14 +131,14 @@ class QQTelegramSummarizerPlugin(Star):
         """检查是否达到总结条件"""
         try:
             messages = list(self.message_cache[group_id])
-            message_threshold = self.config.get('message_threshold', 50)
+            message_threshold = self.get_config_value('message_threshold', 50)
             if len(messages) < message_threshold:
                 return
             
             # 检查时间窗口
             now = datetime.now()
             last_summary = self.last_summary_time.get(group_id)
-            time_window_hours = self.config.get('time_window_hours', 2)
+            time_window_hours = self.get_config_value('time_window_hours', 2)
             
             if last_summary and (now - last_summary).total_seconds() < time_window_hours * 3600:
                 return
@@ -134,8 +154,11 @@ class QQTelegramSummarizerPlugin(Star):
             
             if len(recent_messages) >= message_threshold:
                 # 检查配置
-                ai_config = self.config.get('ai_config', {})
-                use_internal_llm = ai_config.get('use_internal_llm', True)
+                ai_config = self.get_config_value('ai_config', {})
+                if isinstance(ai_config, dict):
+                    use_internal_llm = ai_config.get('use_internal_llm', True)
+                else:
+                    use_internal_llm = True
                 
                 if use_internal_llm:
                     provider = self.context.get_using_provider()
@@ -143,11 +166,13 @@ class QQTelegramSummarizerPlugin(Star):
                         logger.warning("内部LLM提供商未配置，无法生成总结")
                         return
                 else:
-                    if not ai_config.get('api_key'):
+                    if isinstance(ai_config, dict) and not ai_config.get('api_key'):
                         logger.warning("外部AI API密钥未配置，无法生成总结")
                         return
                 
-                if not all([self.config.get('telegram_bot_token'), self.config.get('telegram_chat_id')]):
+                telegram_token = self.get_config_value('telegram_bot_token', '')
+                telegram_chat_id = self.get_config_value('telegram_chat_id', '')
+                if not all([telegram_token, telegram_chat_id]):
                     logger.warning("Telegram配置不完整，无法发送消息")
                     return
                     
@@ -162,7 +187,7 @@ class QQTelegramSummarizerPlugin(Star):
         try:
             # 格式化消息
             formatted_messages = []
-            message_threshold = self.config.get('message_threshold', 50)
+            message_threshold = self.get_config_value('message_threshold', 50)
             for msg in messages[-message_threshold:]:  # 取最新的N条消息
                 formatted_messages.append(f"[{msg['time']}] {msg['user']}: {msg['message']}")
             
@@ -182,9 +207,12 @@ class QQTelegramSummarizerPlugin(Star):
     async def get_ai_summary(self, messages_text: str) -> str:
         """调用AI API获取总结"""
         try:
-            ai_config = self.config.get('ai_config', {})
-            use_internal_llm = ai_config.get('use_internal_llm', True)
-            summary_prompt = self.config.get('summary_prompt', '请总结以下QQ群聊天记录的主要话题和重点内容，用简洁的中文回复：\n\n{messages}')
+            ai_config = self.get_config_value('ai_config', {})
+            if isinstance(ai_config, dict):
+                use_internal_llm = ai_config.get('use_internal_llm', True)
+            else:
+                use_internal_llm = True
+            summary_prompt = self.get_config_value('summary_prompt', '请总结以下QQ群聊天记录的主要话题和重点内容，用简洁的中文回复：\n\n{messages}')
             
             if use_internal_llm:
                 # 使用内部LLM
@@ -250,8 +278,8 @@ class QQTelegramSummarizerPlugin(Star):
     async def send_to_telegram(self, group_id: str, summary: str, message_count: int):
         """发送消息到Telegram"""
         try:
-            telegram_bot_token = self.config.get('telegram_bot_token', '')
-            telegram_chat_id = self.config.get('telegram_chat_id', '')
+            telegram_bot_token = self.get_config_value('telegram_bot_token', '')
+            telegram_chat_id = self.get_config_value('telegram_chat_id', '')
             
             url = f"https://api.telegram.org/bot{telegram_bot_token}/sendMessage"
             
@@ -278,20 +306,23 @@ class QQTelegramSummarizerPlugin(Star):
     async def config_info(self, event: AstrMessageEvent):
         """显示配置信息"""
         config_text = "📋 当前插件配置（请通过WebUI插件管理页面修改）:\n\n"
-        config_text += f"📊 消息阈值: {self.config.get('message_threshold', 50)}\n"
-        config_text += f"⏰ 时间窗口: {self.config.get('time_window_hours', 2)} 小时\n"
+        config_text += f"📊 消息阈值: {self.get_config_value('message_threshold', 50)}\n"
+        config_text += f"⏰ 时间窗口: {self.get_config_value('time_window_hours', 2)} 小时\n"
         
-        ai_config = self.config.get('ai_config', {})
-        config_text += f"🤖 使用内部LLM: {'是' if ai_config.get('use_internal_llm', True) else '否'}\n"
+        ai_config = self.get_config_value('ai_config', {})
+        if isinstance(ai_config, dict):
+            config_text += f"🤖 使用内部LLM: {'是' if ai_config.get('use_internal_llm', True) else '否'}\n"
+            
+            if not ai_config.get('use_internal_llm', True):
+                config_text += f"🔗 AI模型: {ai_config.get('model', 'gpt-3.5-turbo')}\n"
+                config_text += f"🔑 外部API: {'已配置' if ai_config.get('api_key') else '未配置'}\n"
+        else:
+            config_text += "🤖 使用内部LLM: 是\n"
         
-        if not ai_config.get('use_internal_llm', True):
-            config_text += f"🔗 AI模型: {ai_config.get('model', 'gpt-3.5-turbo')}\n"
-            config_text += f"🔑 外部API: {'已配置' if ai_config.get('api_key') else '未配置'}\n"
+        config_text += f"📱 Telegram Token: {'已配置' if self.get_config_value('telegram_bot_token') else '未配置'}\n"
+        config_text += f"💬 Telegram Chat ID: {'已配置' if self.get_config_value('telegram_chat_id') else '未配置'}\n"
         
-        config_text += f"📱 Telegram Token: {'已配置' if self.config.get('telegram_bot_token') else '未配置'}\n"
-        config_text += f"💬 Telegram Chat ID: {'已配置' if self.config.get('telegram_chat_id') else '未配置'}\n"
-        
-        target_groups = self.config.get('target_groups', [])
+        target_groups = self.get_config_value('target_groups', [])
         config_text += f"👥 监听群组: {target_groups if target_groups else '所有群组'}\n\n"
         config_text += "💡 提示: 请通过AstrBot WebUI的插件管理页面修改配置"
         
@@ -320,8 +351,8 @@ class QQTelegramSummarizerPlugin(Star):
     @filter.command("qttest")
     async def test_command(self, event: AstrMessageEvent):
         """测试Telegram发送"""
-        telegram_bot_token = self.config.get('telegram_bot_token', '')
-        telegram_chat_id = self.config.get('telegram_chat_id', '')
+        telegram_bot_token = self.get_config_value('telegram_bot_token', '')
+        telegram_chat_id = self.get_config_value('telegram_chat_id', '')
         
         if not all([telegram_bot_token, telegram_chat_id]):
             yield event.plain_result("请先在WebUI插件管理中配置Telegram Bot Token和Chat ID")
@@ -337,8 +368,8 @@ class QQTelegramSummarizerPlugin(Star):
     
     async def send_test_telegram(self, message: str):
         """发送测试消息到Telegram"""
-        telegram_bot_token = self.config.get('telegram_bot_token', '')
-        telegram_chat_id = self.config.get('telegram_chat_id', '')
+        telegram_bot_token = self.get_config_value('telegram_bot_token', '')
+        telegram_chat_id = self.get_config_value('telegram_chat_id', '')
         
         url = f"https://api.telegram.org/bot{telegram_bot_token}/sendMessage"
         
