@@ -1,0 +1,5 @@
+name: qq_telegram_summarizer # 这是你的插件的唯一识别名。
+desc: QQ群消息监听与AI总结Telegram推送插件，自动收集群消息并生成AI总结推送到Telegram # 插件简短描述
+version: v1.0.0 # 插件版本号。格式：v1.1.1 或者 v1.1
+author: AI助手 # 作者
+repo: https://github.com/Soulter/helloworld # 插件的仓库地址
