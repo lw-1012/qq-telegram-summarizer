@@ -38,6 +38,7 @@ class QQTelegramSummarizerPlugin(Star):
             logger.warning("未传入配置参数，使用默认配置")
             
         self.message_cache: Dict[str, deque] = defaultdict(lambda: deque(maxlen=1000))
+        self.summarizing: Dict[str, bool] = defaultdict(bool)  # 防止重复总结的状态锁
         
         # 调试配置类型和内容
         try:
@@ -118,6 +119,7 @@ class QQTelegramSummarizerPlugin(Star):
             }
             
             self.message_cache[group_id].append(message_data)
+            logger.debug(f"群 {group_id} 新消息: {user_name}, 当前缓存数量: {len(self.message_cache[group_id])}")
             
             # 检查是否需要生成总结
             await self.check_and_summarize(group_id)
@@ -128,44 +130,59 @@ class QQTelegramSummarizerPlugin(Star):
     async def check_and_summarize(self, group_id: str):
         """检查是否达到总结条件"""
         try:
+            # 检查是否已在处理中，避免重复总结
+            if self.summarizing[group_id]:
+                logger.debug(f"群 {group_id} 正在总结中，跳过重复处理")
+                return
+            
             messages = list(self.message_cache[group_id])
             message_threshold = self.get_config_value('message_threshold', 50)
             
             # 简化逻辑：只要达到阈值就总结
             if len(messages) >= message_threshold:
-                # 检查AI配置
-                ai_config = self.get_config_value('ai_config', {})
-                use_internal_llm = True
-                if isinstance(ai_config, dict):
-                    use_internal_llm = ai_config.get('use_internal_llm', True)
+                # 设置处理状态并立即清理缓存，避免竞争条件
+                self.summarizing[group_id] = True
+                messages_to_process = list(self.message_cache[group_id])  # 复制待处理消息
+                self.message_cache[group_id].clear()  # 立即清理缓存
+                logger.info(f"群 {group_id} 开始总结 {len(messages_to_process)} 条消息，缓存已清理")
                 
-                # 检查AI提供商
-                if use_internal_llm:
-                    provider = self.context.get_using_provider()
-                    if not provider:
-                        logger.warning("内部LLM提供商未配置，无法生成总结")
+                try:
+                    # 检查AI配置
+                    ai_config = self.get_config_value('ai_config', {})
+                    use_internal_llm = True
+                    if isinstance(ai_config, dict):
+                        use_internal_llm = ai_config.get('use_internal_llm', True)
+                    
+                    # 检查AI提供商
+                    if use_internal_llm:
+                        provider = self.context.get_using_provider()
+                        if not provider:
+                            logger.warning("内部LLM提供商未配置，无法生成总结")
+                            return
+                    else:
+                        if isinstance(ai_config, dict) and not ai_config.get('api_key'):
+                            logger.warning("外部AI API密钥未配置，无法生成总结")
+                            return
+                    
+                    # 检查Telegram配置
+                    telegram_token = self.get_config_value('telegram_bot_token', '')
+                    telegram_chat_id = self.get_config_value('telegram_chat_id', '')
+                    if not telegram_token or not telegram_chat_id:
+                        logger.warning("Telegram配置不完整，无法发送消息")
                         return
-                else:
-                    if isinstance(ai_config, dict) and not ai_config.get('api_key'):
-                        logger.warning("外部AI API密钥未配置，无法生成总结")
-                        return
-                
-                # 检查Telegram配置
-                telegram_token = self.get_config_value('telegram_bot_token', '')
-                telegram_chat_id = self.get_config_value('telegram_chat_id', '')
-                if not telegram_token or not telegram_chat_id:
-                    logger.warning("Telegram配置不完整，无法发送消息")
-                    return
-                
-                # 生成总结并发送
-                await self.generate_and_send_summary(group_id, messages)
-                
-                # 清理消息缓存
-                self.message_cache[group_id].clear()
-                logger.info(f"群 {group_id} 已总结 {len(messages)} 条消息，缓存已清理")
+                    
+                    # 生成总结并发送
+                    await self.generate_and_send_summary(group_id, messages_to_process)
+                    logger.info(f"群 {group_id} 总结完成")
+                    
+                finally:
+                    # 无论成功失败都要释放状态锁
+                    self.summarizing[group_id] = False
                 
         except Exception as e:
             logger.error(f"检查和总结消息时出错: {e}")
+            # 确保异常情况下也释放状态锁
+            self.summarizing[group_id] = False
     
     async def generate_and_send_summary(self, group_id: str, messages: List[Dict]):
         """生成AI总结并发送到Telegram"""
