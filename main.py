@@ -24,7 +24,6 @@ class QQTelegramSummarizerPlugin(Star):
             # 如果没有传入config，使用默认配置
             self.config = {
                 'message_threshold': 50,
-                'time_window_hours': 2,
                 'telegram_bot_token': '',
                 'telegram_chat_id': '',
                 'ai_config': {
@@ -134,13 +133,13 @@ class QQTelegramSummarizerPlugin(Star):
             
             # 简化逻辑：只要达到阈值就总结
             if len(messages) >= message_threshold:
-                # 检查配置
+                # 检查AI配置
                 ai_config = self.get_config_value('ai_config', {})
+                use_internal_llm = True
                 if isinstance(ai_config, dict):
                     use_internal_llm = ai_config.get('use_internal_llm', True)
-                else:
-                    use_internal_llm = True
                 
+                # 检查AI提供商
                 if use_internal_llm:
                     provider = self.context.get_using_provider()
                     if not provider:
@@ -151,17 +150,19 @@ class QQTelegramSummarizerPlugin(Star):
                         logger.warning("外部AI API密钥未配置，无法生成总结")
                         return
                 
+                # 检查Telegram配置
                 telegram_token = self.get_config_value('telegram_bot_token', '')
                 telegram_chat_id = self.get_config_value('telegram_chat_id', '')
-                if not all([telegram_token, telegram_chat_id]):
+                if not telegram_token or not telegram_chat_id:
                     logger.warning("Telegram配置不完整，无法发送消息")
                     return
-                    
+                
+                # 生成总结并发送
                 await self.generate_and_send_summary(group_id, messages)
                 
-                # 清理已总结的消息，为下一轮循环做准备
+                # 清理消息缓存
                 self.message_cache[group_id].clear()
-                logger.info(f"群 {group_id} 已总结 {len(messages)} 条消息，缓存已清理，开始下一轮收集")
+                logger.info(f"群 {group_id} 已总结 {len(messages)} 条消息，缓存已清理")
                 
         except Exception as e:
             logger.error(f"检查和总结消息时出错: {e}")
