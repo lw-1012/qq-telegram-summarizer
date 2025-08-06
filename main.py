@@ -26,14 +26,22 @@ class QQTelegramSummarizerPlugin(Star):
             'ai_api_key': '',         # AI API密钥
             'ai_model': 'gpt-3.5-turbo',  # AI模型
             'target_groups': [],      # 监听的QQ群列表，为空则监听所有群
-            'summary_prompt': '请总结以下QQ群聊天记录的主要话题和重点内容，用简洁的中文回复：\n\n{messages}'
+            'summary_prompt': '请总结以下QQ群聊天记录的主要话题和重点内容，用简洁的中文回复：\n\n{messages}',
+            'use_internal_llm': False  # 是否使用内部LLM
         }
         self.load_config()
 
     def load_config(self):
         """加载配置文件"""
-        config_path = os.path.join(self.context.base_path, 'qq_telegram_config.json')
         try:
+            # 安全地获取基础路径
+            base_path = getattr(self.context, 'base_path', None)
+            if not base_path:
+                # 如果没有base_path，使用当前目录
+                base_path = os.path.dirname(os.path.abspath(__file__))
+            
+            config_path = os.path.join(base_path, 'qq_telegram_config.json')
+            
             if os.path.exists(config_path):
                 with open(config_path, 'r', encoding='utf-8') as f:
                     saved_config = json.load(f)
@@ -44,8 +52,15 @@ class QQTelegramSummarizerPlugin(Star):
     
     def save_config(self):
         """保存配置文件"""
-        config_path = os.path.join(self.context.base_path, 'qq_telegram_config.json')
         try:
+            # 安全地获取基础路径
+            base_path = getattr(self.context, 'base_path', None)
+            if not base_path:
+                # 如果没有base_path，使用当前目录
+                base_path = os.path.dirname(os.path.abspath(__file__))
+                
+            config_path = os.path.join(base_path, 'qq_telegram_config.json')
+            
             with open(config_path, 'w', encoding='utf-8') as f:
                 json.dump(self.config, f, ensure_ascii=False, indent=2)
             logger.info("配置文件保存成功")
@@ -62,14 +77,29 @@ class QQTelegramSummarizerPlugin(Star):
     async def on_group_message(self, event: AstrMessageEvent):
         """监听群消息"""
         try:
-            group_id = event.group_id if hasattr(event, 'group_id') else str(event.platform_meta.get('group_id', 'unknown'))
+            # 安全地获取群组ID
+            group_id = None
+            if hasattr(event, 'group_id') and event.group_id:
+                group_id = str(event.group_id)
+            elif hasattr(event, 'platform_meta') and event.platform_meta and isinstance(event.platform_meta, dict):
+                group_id = str(event.platform_meta.get('group_id', 'unknown'))
+            else:
+                group_id = 'unknown'
             
             # 如果配置了特定群组，只监听这些群组
             if self.config['target_groups'] and group_id not in self.config['target_groups']:
                 return
             
-            user_name = event.get_sender_name()
-            message_str = event.message_str
+            # 安全地获取用户名
+            user_name = None
+            try:
+                user_name = event.get_sender_name()
+                if not user_name:
+                    user_name = "未知用户"
+            except Exception:
+                user_name = "未知用户"
+            
+            message_str = event.message_str or ""
             timestamp = datetime.now()
             
             # 存储消息到缓存
