@@ -4,7 +4,7 @@ from astrbot.api import logger
 import asyncio
 import time
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict, deque
 from typing import Dict, List, Any
 import aiohttp
@@ -110,7 +110,7 @@ class QQTelegramSummarizerPlugin(Star):
                 user_name = "未知用户"
             
             message_str = event.message_str or ""
-            timestamp = datetime.now()
+            timestamp = datetime.now(timezone(timedelta(hours=8)))
             
             # 存储消息到缓存
             message_data = {
@@ -136,7 +136,7 @@ class QQTelegramSummarizerPlugin(Star):
                 return
             
             # 检查时间窗口
-            now = datetime.now()
+            now = datetime.now(timezone(timedelta(hours=8)))
             last_summary = self.last_summary_time.get(group_id)
             time_window_hours = self.get_config_value('time_window_hours', 2)
             
@@ -178,6 +178,10 @@ class QQTelegramSummarizerPlugin(Star):
                     
                 await self.generate_and_send_summary(group_id, recent_messages)
                 self.last_summary_time[group_id] = now
+                
+                # 清理已总结的消息，为下一轮循环做准备
+                self.message_cache[group_id].clear()
+                logger.info(f"群 {group_id} 消息缓存已清理，开始下一轮收集")
                 
         except Exception as e:
             logger.error(f"检查和总结消息时出错: {e}")
@@ -284,7 +288,7 @@ class QQTelegramSummarizerPlugin(Star):
             url = f"https://api.telegram.org/bot{telegram_bot_token}/sendMessage"
             
             text = f"📊 QQ群 {group_id} 消息总结\n\n"
-            text += f"📅 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            text += f"📅 时间: {datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M:%S')}\n"
             text += f"💬 消息数量: {message_count} 条\n\n"
             text += f"📝 AI总结:\n{summary}"
             
@@ -358,7 +362,7 @@ class QQTelegramSummarizerPlugin(Star):
             yield event.plain_result("请先在WebUI插件管理中配置Telegram Bot Token和Chat ID")
             return
         
-        test_message = f"🧪 测试消息\n时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n这是一条来自QQ群消息总结插件的测试消息。"
+        test_message = f"🧪 测试消息\n时间: {datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M:%S')}\n这是一条来自QQ群消息总结插件的测试消息。"
         
         try:
             await self.send_test_telegram(test_message)
