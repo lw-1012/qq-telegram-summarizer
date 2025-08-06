@@ -73,30 +73,22 @@ class QQTelegramSummarizerPlugin(Star):
         if not all([self.config['telegram_bot_token'], self.config['telegram_chat_id'], self.config['ai_api_key']]):
             logger.warning("请使用 /qtconfig 命令配置必要的参数")
     
-    @filter.group_message
+    @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def on_group_message(self, event: AstrMessageEvent):
         """监听群消息"""
         try:
             # 安全地获取群组ID
-            group_id = None
-            if hasattr(event, 'group_id') and event.group_id:
-                group_id = str(event.group_id)
-            elif hasattr(event, 'platform_meta') and event.platform_meta and isinstance(event.platform_meta, dict):
-                group_id = str(event.platform_meta.get('group_id', 'unknown'))
-            else:
-                group_id = 'unknown'
+            group_id = event.get_group_id()
+            if not group_id:
+                return  # 如果不是群消息，直接返回
             
             # 如果配置了特定群组，只监听这些群组
             if self.config['target_groups'] and group_id not in self.config['target_groups']:
                 return
             
             # 安全地获取用户名
-            user_name = None
-            try:
-                user_name = event.get_sender_name()
-                if not user_name:
-                    user_name = "未知用户"
-            except Exception:
+            user_name = event.get_sender_name()
+            if not user_name:
                 user_name = "未知用户"
             
             message_str = event.message_str or ""
