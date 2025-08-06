@@ -39,7 +39,6 @@ class QQTelegramSummarizerPlugin(Star):
             logger.warning("未传入配置参数，使用默认配置")
             
         self.message_cache: Dict[str, deque] = defaultdict(lambda: deque(maxlen=1000))
-        self.last_summary_time: Dict[str, datetime] = {}
         
         # 调试配置类型和内容
         try:
@@ -132,27 +131,9 @@ class QQTelegramSummarizerPlugin(Star):
         try:
             messages = list(self.message_cache[group_id])
             message_threshold = self.get_config_value('message_threshold', 50)
-            if len(messages) < message_threshold:
-                return
             
-            # 检查时间窗口
-            now = datetime.now(timezone(timedelta(hours=8)))
-            last_summary = self.last_summary_time.get(group_id)
-            time_window_hours = self.get_config_value('time_window_hours', 2)
-            
-            if last_summary and (now - last_summary).total_seconds() < time_window_hours * 3600:
-                return
-            
-            # 筛选时间窗口内的消息
-            cutoff_time = now - timedelta(hours=time_window_hours)
-            recent_messages = []
-            
-            for msg in messages:
-                msg_time = datetime.strptime(msg['time'], '%Y-%m-%d %H:%M:%S')
-                if msg_time >= cutoff_time:
-                    recent_messages.append(msg)
-            
-            if len(recent_messages) >= message_threshold:
+            # 简化逻辑：只要达到阈值就总结
+            if len(messages) >= message_threshold:
                 # 检查配置
                 ai_config = self.get_config_value('ai_config', {})
                 if isinstance(ai_config, dict):
@@ -176,12 +157,11 @@ class QQTelegramSummarizerPlugin(Star):
                     logger.warning("Telegram配置不完整，无法发送消息")
                     return
                     
-                await self.generate_and_send_summary(group_id, recent_messages)
-                self.last_summary_time[group_id] = now
+                await self.generate_and_send_summary(group_id, messages)
                 
                 # 清理已总结的消息，为下一轮循环做准备
                 self.message_cache[group_id].clear()
-                logger.info(f"群 {group_id} 消息缓存已清理，开始下一轮收集")
+                logger.info(f"群 {group_id} 已总结 {len(messages)} 条消息，缓存已清理，开始下一轮收集")
                 
         except Exception as e:
             logger.error(f"检查和总结消息时出错: {e}")
@@ -311,7 +291,6 @@ class QQTelegramSummarizerPlugin(Star):
         """显示配置信息"""
         config_text = "📋 当前插件配置（请通过WebUI插件管理页面修改）:\n\n"
         config_text += f"📊 消息阈值: {self.get_config_value('message_threshold', 50)}\n"
-        config_text += f"⏰ 时间窗口: {self.get_config_value('time_window_hours', 2)} 小时\n"
         
         ai_config = self.get_config_value('ai_config', {})
         if isinstance(ai_config, dict):
@@ -340,11 +319,6 @@ class QQTelegramSummarizerPlugin(Star):
         for group_id, messages in self.message_cache.items():
             status_text += f"群 {group_id}:\n"
             status_text += f"  缓存消息数: {len(messages)}\n"
-            last_summary = self.last_summary_time.get(group_id)
-            if last_summary:
-                status_text += f"  上次总结: {last_summary.strftime('%Y-%m-%d %H:%M:%S')}\n"
-            else:
-                status_text += f"  上次总结: 从未\n"
             status_text += "\n"
         
         if not self.message_cache:
