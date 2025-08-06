@@ -1,6 +1,6 @@
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star, register
-from astrbot.api import logger, AstrBotConfig
+from astrbot.api import logger
 import asyncio
 import time
 import json
@@ -13,11 +13,51 @@ import os
 
 @register("qq_telegram_summarizer", "AI助手", "QQ群消息监听与AI总结Telegram推送插件", "1.0.0")
 class QQTelegramSummarizerPlugin(Star):
-    def __init__(self, context: Context, config: AstrBotConfig):
+    def __init__(self, context: Context, config = None):
         super().__init__(context)
-        self.config = config  # 使用AstrBot的配置系统
+        
+        # 兼容不同版本的AstrBot，不指定类型
+        if config is not None:
+            self.config = config  # 使用AstrBot的配置系统
+            logger.info(f"使用传入的配置: {type(config)}")
+        else:
+            # 如果没有传入config，使用默认配置
+            self.config = {
+                'message_threshold': 50,
+                'time_window_hours': 2,
+                'telegram_bot_token': '',
+                'telegram_chat_id': '',
+                'ai_config': {
+                    'use_internal_llm': True,
+                    'api_url': 'https://api.openai.com/v1/chat/completions',
+                    'api_key': '',
+                    'model': 'gpt-3.5-turbo'
+                },
+                'target_groups': [],
+                'summary_prompt': '请总结以下QQ群聊天记录的主要话题和重点内容，用简洁的中文回复：\n\n{messages}'
+            }
+            logger.warning("未传入配置参数，使用默认配置")
+            
         self.message_cache: Dict[str, deque] = defaultdict(lambda: deque(maxlen=1000))
         self.last_summary_time: Dict[str, datetime] = {}
+        
+        # 调试配置类型和内容
+        try:
+            logger.info(f"最终配置类型: {type(self.config)}")
+            if hasattr(self.config, 'get'):
+                logger.info("配置对象支持.get()方法")
+            else:
+                logger.warning("配置对象不支持.get()方法，尝试转换")
+                if hasattr(self.config, '__dict__'):
+                    self.config = self.config.__dict__
+                elif hasattr(self.config, 'items'):
+                    self.config = dict(self.config)
+                else:
+                    logger.error(f"无法处理配置类型: {type(self.config)}")
+                    self.config = {}
+        except Exception as e:
+            logger.error(f"配置处理出错: {e}")
+            self.config = {}
 
     async def initialize(self):
         """插件初始化"""
