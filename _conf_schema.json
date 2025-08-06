@@ -1,0 +1,67 @@
+{
+  "message_threshold": {
+    "description": "消息阈值 - 达到此数量消息后触发总结",
+    "type": "int",
+    "hint": "建议设置为30-100之间，数量太少总结效果不佳",
+    "default": 50
+  },
+  "time_window_hours": {
+    "description": "时间窗口（小时）- 只统计此时间范围内的消息",
+    "type": "int",
+    "hint": "建议设置为1-6小时，太长会包含过时信息",
+    "default": 2
+  },
+  "telegram_bot_token": {
+    "description": "Telegram Bot Token",
+    "type": "string",
+    "hint": "从 @BotFather 获取的机器人Token",
+    "obvious_hint": true
+  },
+  "telegram_chat_id": {
+    "description": "Telegram Chat ID",
+    "type": "string",
+    "hint": "接收消息的群组或用户ID，可以是负数（群组）或正数（用户）"
+  },
+  "ai_config": {
+    "description": "AI配置",
+    "type": "object",
+    "hint": "配置外部AI服务或使用内部LLM",
+    "items": {
+      "use_internal_llm": {
+        "description": "使用内部LLM",
+        "type": "bool",
+        "hint": "开启后将使用AstrBot配置的LLM，关闭后使用下方的外部API",
+        "default": true
+      },
+      "api_url": {
+        "description": "AI API地址",
+        "type": "string",
+        "hint": "外部AI服务的API地址，如OpenAI兼容接口",
+        "default": "https://api.openai.com/v1/chat/completions"
+      },
+      "api_key": {
+        "description": "AI API密钥",
+        "type": "string",
+        "hint": "外部AI服务的API密钥"
+      },
+      "model": {
+        "description": "AI模型",
+        "type": "string",
+        "hint": "使用的AI模型名称",
+        "default": "gpt-3.5-turbo"
+      }
+    }
+  },
+  "target_groups": {
+    "description": "监听的QQ群列表",
+    "type": "list",
+    "hint": "留空则监听所有群组，填写群号则只监听指定群组",
+    "default": []
+  },
+  "summary_prompt": {
+    "description": "总结提示词",
+    "type": "text",
+    "hint": "AI总结时使用的提示词，{messages}会被替换为聊天记录",
+    "default": "请总结以下QQ群聊天记录的主要话题和重点内容，用简洁的中文回复：\n\n{messages}"
+  }
+}
